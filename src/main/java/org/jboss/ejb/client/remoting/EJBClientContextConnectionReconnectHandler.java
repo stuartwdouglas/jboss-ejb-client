@@ -44,8 +44,8 @@ class EJBClientContextConnectionReconnectHandler extends MaxAttemptsReconnectHan
     private final EJBClientContext ejbClientContext;
     private final RemotingCleanupHandler remotingCleanupHandler = new RemotingCleanupHandler();
 
-    EJBClientContextConnectionReconnectHandler(final EJBClientContext clientContext, final Endpoint endpoint, final String host, final int port, final EJBClientConfiguration.CommonConnectionCreationConfiguration connectionConfiguration, final int maxReconnectAttempts) {
-        super(endpoint, host, port, connectionConfiguration, maxReconnectAttempts);
+    EJBClientContextConnectionReconnectHandler(final EJBClientContext clientContext, final Endpoint endpoint, final String protocol, final String host, final int port, final EJBClientConfiguration.CommonConnectionCreationConfiguration connectionConfiguration, final int maxReconnectAttempts) {
+        super(endpoint, protocol, host, port, connectionConfiguration, maxReconnectAttempts);
         this.ejbClientContext = clientContext;
         // register a EJB client context listener so that we can close the connections we create, when the
         // EJB client context is closed

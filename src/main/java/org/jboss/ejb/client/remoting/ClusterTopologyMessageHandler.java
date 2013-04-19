@@ -109,7 +109,7 @@ class ClusterTopologyMessageHandler extends ProtocolMessageHandler {
                         // read the destination port
                         final short destinationPort = input.readShort();
                         // create a ClientMapping out of this
-                        clientMappings[c] = new ClientMapping(clientNetworkAddress, clientNetMask & 0xff, destinationAddress, destinationPort);
+                        clientMappings[c] = new ClientMapping(clientNetworkAddress, clientNetMask & 0xff, destinationAddress, destinationPort, destinationProtocol);
                     }
                     // form a cluster node out of the available information
                     final ClusterNode clusterNode = new ClusterNode(clusterName, nodeName, clientMappings);
