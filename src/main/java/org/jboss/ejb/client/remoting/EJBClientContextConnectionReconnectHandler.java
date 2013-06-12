@@ -27,11 +27,8 @@ import org.jboss.ejb.client.EJBClientContext;
 import org.jboss.ejb.client.EJBReceiver;
 import org.jboss.remoting3.Connection;
 import org.jboss.remoting3.Endpoint;
-import org.xnio.OptionMap;
 
-import javax.security.auth.callback.CallbackHandler;
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
 
 /**
  * A {@link MaxAttemptsReconnectHandler} which creates a {@link RemotingConnectionEJBReceiver} out of the
@@ -62,7 +59,7 @@ class EJBClientContextConnectionReconnectHandler extends MaxAttemptsReconnectHan
             }
             // keep track of this connection so that we can close it when the EJB client context is closed
             this.remotingCleanupHandler.addConnection(connection);
-            final EJBReceiver ejbReceiver = new RemotingConnectionEJBReceiver(connection, this, connectionConfiguration.getChannelCreationOptions());
+            final EJBReceiver ejbReceiver = new RemotingConnectionEJBReceiver(connection, this, connectionConfiguration.getChannelCreationOptions(), protocol);
             this.ejbClientContext.registerEJBReceiver(ejbReceiver);
         } finally {
             // if we successfully re-connected or if no more attempts are allowed for re-connecting
