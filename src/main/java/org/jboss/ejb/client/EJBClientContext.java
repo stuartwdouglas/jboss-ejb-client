@@ -451,6 +451,17 @@ public final class EJBClientContext extends Attachable implements Closeable {
      * Register a Remoting connection with this client context.
      *
      * @param connection the connection to register
+     */
+    @Deprecated
+    public void registerConnection(final Connection connection) {
+        //TODO: the protocol is hard coded to remote here. If this method is used to
+        //add a cconnection that is then used to setup a cluster this could cause issues
+        registerEJBReceiver(new RemotingConnectionEJBReceiver(connection, RemotingConnectionEJBReceiver.HTTP_REMOTING));
+    }
+    /**
+     * Register a Remoting connection with this client context.
+     *
+     * @param connection the connection to register
      * @param remotingProtocol The remoting protocol. Can be 'remote', 'http-remoting' or 'https-remoting'
      */
     public void registerConnection(final Connection connection, String remotingProtocol) {

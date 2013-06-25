@@ -64,6 +64,11 @@ import org.xnio.OptionMap;
  */
 public final class RemotingConnectionEJBReceiver extends EJBReceiver {
 
+    public static final String REMOTE = "remote";
+    public static final String HTTP_REMOTING = "http-remoting";
+    public static final String HTTPS_REMOTING = "https-remoting";
+
+
     private static final Logger logger = Logger.getLogger(RemotingConnectionEJBReceiver.class);
 
     private static final String EJB_CHANNEL_NAME = "jboss.ejb";
@@ -101,6 +106,15 @@ public final class RemotingConnectionEJBReceiver extends EJBReceiver {
         this(connection, null, OptionMap.EMPTY, remotingProtocol);
     }
 
+    /**
+     * Construct a new instance.
+     *
+     * @param connection the connection to associate with
+     */
+    @Deprecated
+    public RemotingConnectionEJBReceiver(final Connection connection) {
+        this(connection, HTTP_REMOTING);
+    }
 
     /**
      * Construct a new instance.
