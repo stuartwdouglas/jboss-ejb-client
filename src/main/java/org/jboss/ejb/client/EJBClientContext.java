@@ -24,6 +24,8 @@ package org.jboss.ejb.client;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -84,6 +86,16 @@ public final class EJBClientContext extends Attachable implements Closeable {
             final EJBClientConfiguration clientConfiguration = new PropertiesBasedEJBClientConfiguration(ejbClientProperties);
             SELECTOR = new ConfigBasedEJBClientContextSelector(clientConfiguration);
         }
+        SELECTOR = AccessController.doPrivileged(new PrivilegedAction<ContextSelector<EJBClientContext>>() {
+            @Override
+            public ContextSelector<EJBClientContext> run() {
+                ContextSelector<EJBClientContext> current = SELECTOR;
+                for(DefaultContextSelectorProvider service : ServiceLoader.load(DefaultContextSelectorProvider.class)) {
+                    current = service.wrapDefaultContextSelector(current, ejbClientProperties);
+                }
+                return current;
+            }
+        });
     }
 
     private static volatile boolean SELECTOR_LOCKED;
