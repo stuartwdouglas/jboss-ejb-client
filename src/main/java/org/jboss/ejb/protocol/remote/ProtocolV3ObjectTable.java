@@ -62,6 +62,7 @@ import org.jboss.ejb.client.EJBClientPermission;
 import org.jboss.ejb.client.EJBHandle;
 import org.jboss.ejb.client.EJBHomeHandle;
 import org.jboss.ejb.client.EJBHomeLocator;
+import org.jboss.ejb.client.EJBIdentifier;
 import org.jboss.ejb.client.EJBLocator;
 import org.jboss.ejb.client.EJBMethodLocator;
 import org.jboss.ejb.client.EntityEJBLocator;
@@ -108,6 +109,8 @@ final class ProtocolV3ObjectTable implements ObjectTable {
             AttachmentKeys.HINTS_DISABLED,
             AttachmentKeys.VIEW_CLASS_DATA_COMPRESSION_HINT_ATTACHMENT_KEY,
             AttachmentKeys.VIEW_METHOD_DATA_COMPRESSION_HINT_ATTACHMENT_KEY,
+            Affinity.LOCAL,
+            Affinity.NONE,
             Throwable.class.getName(),
             Exception.class.getName(),
             RuntimeException.class.getName(),
@@ -164,6 +167,7 @@ final class ProtocolV3ObjectTable implements ObjectTable {
             AttachmentKey.class.getName(),
             EJBClientPermission.class.getName(),
             AsyncResult.class.getName(),
+            EJBIdentifier.class.getName(),
             "detailMessage",
             "cause",
             "stackTrace",
@@ -177,6 +181,16 @@ final class ProtocolV3ObjectTable implements ObjectTable {
             "ejbPassivate",
             "ejbLoad",
             "ejbStore",
+            "appName",
+            "beanName",
+            "moduleName",
+            "distinctName",
+            "parameterTypeNames",
+            "affinity",
+            "identifier",
+            "viewType",
+            "methodName"
+
         };
         final AbstractWritingExternalizer[] extByIdTmp = new AbstractWritingExternalizer[simpleObjects.length];
         final Map<Object, AbstractWritingExternalizer> objMap = new IdentityHashMap<>();
