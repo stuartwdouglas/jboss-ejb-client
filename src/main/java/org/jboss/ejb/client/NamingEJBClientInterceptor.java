@@ -19,7 +19,9 @@
 package org.jboss.ejb.client;
 
 import java.net.URI;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.jboss.ejb.client.annotation.ClientInterceptorPriority;
@@ -36,6 +38,8 @@ public final class NamingEJBClientInterceptor implements EJBClientInterceptor {
      * This interceptor's priority.
      */
     public static final int PRIORITY = ClientInterceptorPriority.JBOSS_AFTER + 50;
+
+    private static final AttachmentKey<Set<URI>> ATTEMPTED_KEY = new AttachmentKey<>();
 
     public NamingEJBClientInterceptor() {
     }
@@ -55,6 +59,7 @@ public final class NamingEJBClientInterceptor implements EJBClientInterceptor {
     }
 
     private static void setDestination(final AbstractInvocationContext context, final NamingProvider namingProvider) {
+
         if (namingProvider != null) {
             final URI destination = context.getDestination();
             if (destination == null) {
@@ -62,11 +67,31 @@ public final class NamingEJBClientInterceptor implements EJBClientInterceptor {
                 if (locator.getAffinity() == Affinity.NONE || locator.getAffinity() instanceof ClusterAffinity) {
                     final Affinity weakAffinity = context.getWeakAffinity();
                     if (weakAffinity == Affinity.NONE || weakAffinity instanceof ClusterAffinity) {
+
+
+                        Set<URI> set = context.getAttachment(ATTEMPTED_KEY);
+                        if (set == null) {
+                            final Set<URI> appearing = context.putAttachmentIfAbsent(ATTEMPTED_KEY, set = new HashSet<>());
+                            if (appearing != null) {
+                                set = appearing;
+                            }
+                        }
                         final List<NamingProvider.Location> locations = namingProvider.getLocations();
                         if (locations.size() == 1) {
-                            context.setDestination(locations.get(0).getUri());
+                            URI uri = locations.get(0).getUri();
+                            if(set.add(uri)) {
+                                context.setDestination(uri);
+                            }
                         } else if (locations.size() > 0) {
-                            context.setDestination(locations.get(ThreadLocalRandom.current().nextInt(locations.size())).getUri());
+                            int offset = ThreadLocalRandom.current().nextInt(locations.size());
+                            for(int i = 0; i < locations.size(); ++i) {
+                                int pos = (i + offset) % locations.size();
+                                URI location = locations.get(pos).getUri();
+                                if(set.add(location)) {
+                                    context.setDestination(location);
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
