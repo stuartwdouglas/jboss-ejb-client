@@ -151,4 +151,13 @@ public final class EJBMethodLocator implements Serializable {
     public int hashCode() {
         return hashCode;
     }
+
+    @Override
+    public String toString() {
+        return "EJBMethodLocator{" +
+                "methodName='" + methodName + '\'' +
+                ", parameterTypeNames=" + Arrays.toString(parameterTypeNames) +
+                ", hashCode=" + hashCode +
+                '}';
+    }
 }

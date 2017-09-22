@@ -49,6 +49,8 @@ import org.wildfly.security.auth.client.AuthenticationContext;
  */
 public final class EJBClientInvocationContext extends AbstractInvocationContext {
 
+    private final int TEST_TIMEOUT = Integer.getInteger("org.jboss.ejb-client.audit-timeout", 2000);
+
     private static final Logs log = Logs.MAIN;
 
     public static final String PRIVATE_ATTACHMENTS_KEY = "org.jboss.ejb.client.invocation.attachments";
@@ -425,18 +427,21 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         final int idx = interceptorChainIndex ++;
         try {
             if (cancelRequested) {
+                getAttachment(InvocationTrace.ATTACHMENT_KEY).log("sendRequest called, but cancel is requested");
                 synchronized (lock) {
                     transition(State.SENT);
                     resultReady(CANCELLED);
                     checkStateInvariants();
                 }
             } else if (chain.length == idx) {
+                getAttachment(InvocationTrace.ATTACHMENT_KEY).log("sendRequest called, resolving the receiver");
                 // End of the chain processing; deliver to receiver or throw an exception.
                 final URI destination = getDestination();
                 final EJBReceiver receiver;
                 try {
                     receiver = getClientContext().resolveReceiver(destination, getLocator());
                 } catch (Throwable t) {
+                    getAttachment(InvocationTrace.ATTACHMENT_KEY).log("exception resolving receiver " + t.toString());
                     synchronized (lock) {
                         if (state != State.SENT) {
                             transition(State.SENT);
@@ -451,6 +456,7 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                     checkStateInvariants();
                 }
                 try {
+                    getAttachment(InvocationTrace.ATTACHMENT_KEY).log("calling receiver processInvocation");
                     receiver.processInvocation(receiverInvocationContext);
                 } catch (Throwable t) {
                     synchronized (lock) {
@@ -463,8 +469,11 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 }
             } else {
                 try {
-                    chain[idx].getInterceptorInstance().handleInvocation(this);
+                    EJBClientInterceptor interceptorInstance = chain[idx].getInterceptorInstance();
+                    getAttachment(InvocationTrace.ATTACHMENT_KEY).log("Calling interceptor " + idx + " of " + chain.length + " " + interceptorInstance);
+                    interceptorInstance.handleInvocation(this);
                 } catch (Throwable t) {
+                    getAttachment(InvocationTrace.ATTACHMENT_KEY).log("Exception from interceptor " + t.toString());
                     synchronized (lock) {
                         if (state != State.SENT) {
                             transition(State.SENT);
@@ -857,7 +866,11 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                                     // no timeout; lighter code path
                                     try {
                                         checkStateInvariants();
-                                        lock.wait();
+                                        lock.wait(TEST_TIMEOUT);
+                                        long remaining = max(0L, TEST_TIMEOUT * 1_000_000L - max(0L, System.nanoTime() - startTime));
+                                        if(remaining == 0L) {
+                                            getAttachment(InvocationTrace.ATTACHMENT_KEY).print();
+                                        }
                                     } catch (InterruptedException e) {
                                         intr = true;
                                     }

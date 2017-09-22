@@ -156,12 +156,18 @@ final class EJBInvocationHandler<T> extends Attachable implements InvocationHand
         invocationContext.setBlockingCaller(true);
         invocationContext.setWeakAffinity(getWeakAffinity());
 
+        InvocationTrace trace = new InvocationTrace(locatorRef.get(), methodInfo.methodLocator);
+        invocationContext.putAttachment(InvocationTrace.ATTACHMENT_KEY, trace);
+        trace.log("Invocation started");
+
         try {
             // send the request
             invocationContext.sendRequestInitial();
+            trace.log("sendRequestInitial returned");
 
             if (! async && ! methodInfo.isClientAsync()) {
                 // wait for invocation to complete
+                trace.log("waiting for result");
                 return invocationContext.awaitResponse();
             }
             // proceed asynchronously

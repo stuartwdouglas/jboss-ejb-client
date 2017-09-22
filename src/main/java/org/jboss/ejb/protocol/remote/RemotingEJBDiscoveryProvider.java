@@ -48,6 +48,7 @@ import org.jboss.ejb._private.Logs;
 import org.jboss.ejb.client.EJBClientConnection;
 import org.jboss.ejb.client.EJBClientContext;
 import org.jboss.ejb.client.EJBModuleIdentifier;
+import org.jboss.ejb.client.InvocationTrace;
 import org.jboss.remoting3.ConnectionPeerIdentity;
 import org.jboss.remoting3.Endpoint;
 import org.wildfly.common.Assert;
@@ -116,6 +117,7 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
     }
 
     public DiscoveryRequest discover(final ServiceType serviceType, final FilterSpec filterSpec, final DiscoveryResult result) {
+
         if (! serviceType.implies(ServiceType.of("ejb", "jboss"))) {
             // only respond to requests for JBoss EJB services
             result.complete();
@@ -124,6 +126,7 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
         final EJBClientContext ejbClientContext = getCurrent();
         final RemoteEJBReceiver ejbReceiver = ejbClientContext.getAttachment(RemoteTransportProvider.ATTACHMENT_KEY);
         if (ejbReceiver == null) {
+            InvocationTrace.logStatic("Not performing discovery as no ejbReceiver");
             // ???
             result.complete();
             return DiscoveryRequest.NULL;
@@ -328,27 +331,32 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
         private final List<Runnable> cancellers = Collections.synchronizedList(new ArrayList<>());
         private final IoFuture.HandlingNotifier<ConnectionPeerIdentity, URI> outerNotifier;
         private final IoFuture.HandlingNotifier<EJBClientChannel, URI> innerNotifier;
+        private final InvocationTrace invocationTrace;
 
         DiscoveryAttempt(final ServiceType serviceType, final FilterSpec filterSpec, final DiscoveryResult discoveryResult, final RemoteEJBReceiver ejbReceiver, final AuthenticationContext authenticationContext) {
             this.serviceType = serviceType;
             this.filterSpec = filterSpec;
             this.discoveryResult = discoveryResult;
             this.ejbReceiver = ejbReceiver;
+            this.invocationTrace = InvocationTrace.getCurrent();
 
             this.authenticationContext = authenticationContext;
             endpoint = Endpoint.getCurrent();
             outerNotifier = new IoFuture.HandlingNotifier<ConnectionPeerIdentity, URI>() {
                 public void handleCancelled(final URI destination) {
+                    invocationTrace.log("outerNotifier cancelled for " + destination);
                     countDown();
                 }
 
                 public void handleFailed(final IOException exception, final URI destination) {
+                    invocationTrace.log("outerNotifier failed " + exception + " for " + destination);
                     DiscoveryAttempt.this.discoveryResult.reportProblem(exception);
                     failedDestinations.add(destination);
                     countDown();
                 }
 
                 public void handleDone(final ConnectionPeerIdentity data, final URI destination) {
+                    invocationTrace.log("outerNotifier done for " + destination);
                     final IoFuture<EJBClientChannel> future = DiscoveryAttempt.this.ejbReceiver.serviceHandle.getClientService(data.getConnection(), OptionMap.EMPTY);
                     onCancel(future::cancel);
                     future.addNotifier(innerNotifier, destination);
@@ -356,16 +364,19 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
             };
             innerNotifier = new IoFuture.HandlingNotifier<EJBClientChannel, URI>() {
                 public void handleCancelled(final URI destination) {
+                    invocationTrace.log("innerNotifier cancelled for " + destination);
                     countDown();
                 }
 
                 public void handleFailed(final IOException exception, final URI destination) {
+                    invocationTrace.log("innerNotifier failed " + exception + " for " + destination);
                     DiscoveryAttempt.this.discoveryResult.reportProblem(exception);
                     failedDestinations.add(destination);
                     countDown();
                 }
 
                 public void handleDone(final EJBClientChannel clientChannel, final URI destination) {
+                    invocationTrace.log("innerNotifier done for " + destination);
                     failedDestinations.remove(destination);
                     countDown();
                 }
@@ -373,8 +384,10 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
         }
 
         void connectAndDiscover(URI uri, String clusterEffective) {
+            invocationTrace.log("connectAndDiscover " + uri);
             final String scheme = uri.getScheme();
             if (scheme == null || ! ejbReceiver.getRemoteTransportProvider().supportsProtocol(scheme) || ! endpoint.isValidUriScheme(scheme)) {
+                invocationTrace.log("connectAndDiscover " + uri + " not valid, counting down");
                 countDown();
                 return;
             }
@@ -385,17 +398,24 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
         }
 
         void countDown() {
+            invocationTrace.log("countDown " + outstandingCount.get());
             if (outstandingCount.decrementAndGet() == 0) {
+                invocationTrace.log("countDown hit zero");
                 final DiscoveryResult result = this.discoveryResult;
                 final String node = filterSpec.accept(NODE_EXTRACTOR);
                 final EJBModuleIdentifier module = filterSpec.accept(MI_EXTRACTOR);
                 if (phase2) {
                     if (node != null) {
                         final NodeInformation information = nodes.get(node);
-                        if (information != null) information.discover(serviceType, filterSpec, result);
+                        if (information != null) {
+                            invocationTrace.log("phase2 discovered node " + information.getNodeName());
+                            information.discover(serviceType, filterSpec, result);
+                        }
                     } else for (NodeInformation information : nodes.values()) {
+                        invocationTrace.log("phase2 discovered nodes " + information.getNodeName());
                         information.discover(serviceType, filterSpec, result);
                     }
+                    invocationTrace.log("phase2 complete");
                     result.complete();
                 } else {
                     boolean ok = false;
@@ -403,18 +423,22 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
                     if (node != null) {
                         final NodeInformation information = nodes.get(node);
                         if (information != null) {
+                            invocationTrace.log("phase1 discovered node " + information.getNodeName());
                             if (information.discover(serviceType, filterSpec, result)) {
                                 ok = true;
                             }
                         }
                     } else for (NodeInformation information : nodes.values()) {
+                        invocationTrace.log("phase1 discovered nodes " + information.getNodeName());
                         if (information.discover(serviceType, filterSpec, result)) {
                             ok = true;
                         }
                     }
                     if (ok) {
+                        invocationTrace.log("phase1 all done");
                         result.complete();
                     } else {
+                        invocationTrace.log("phase1 failed, try phase2");
                         // everything failed.  We have to reconnect everything.
                         Set<URI> everything = new HashSet<>();
                         Map<URI, String> effectiveAuthMappings = new HashMap<>();

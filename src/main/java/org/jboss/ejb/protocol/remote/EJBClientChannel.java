@@ -67,6 +67,7 @@ import org.jboss.ejb.client.EJBLocator;
 import org.jboss.ejb.client.EJBModuleIdentifier;
 import org.jboss.ejb.client.EJBReceiverInvocationContext;
 import org.jboss.ejb.client.EJBSessionCreationInvocationContext;
+import org.jboss.ejb.client.InvocationTrace;
 import org.jboss.ejb.client.NodeAffinity;
 import org.jboss.ejb.client.RequestSendFailedException;
 import org.jboss.ejb.client.SessionID;
@@ -181,7 +182,7 @@ class EJBClientChannel {
                 case Protocol.SESSION_NOT_ACTIVE:
                 case Protocol.EJB_NOT_STATEFUL:
                 case Protocol.BAD_VIEW_TYPE:
-                case Protocol.PROCEED_ASYNC_RESPONSE:{
+                case Protocol.PROCEED_ASYNC_RESPONSE: {
                     final int invId = message.readUnsignedShort();
                     leaveOpen = invocationTracker.signalResponse(invId, msg, message, false);
                     break;
@@ -197,7 +198,7 @@ class EJBClientChannel {
                     int count = StreamUtils.readPackedSignedInt32(message);
                     final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(getChannel().getConnection().getRemoteEndpointName());
                     final EJBModuleIdentifier[] moduleList = new EJBModuleIdentifier[count];
-                    for (int i = 0; i < count; i ++) {
+                    for (int i = 0; i < count; i++) {
                         final String appName = message.readUTF();
                         final String moduleName = message.readUTF();
                         final String distinctName = message.readUTF();
@@ -215,7 +216,7 @@ class EJBClientChannel {
                     int count = StreamUtils.readPackedSignedInt32(message);
                     final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(getChannel().getConnection().getRemoteEndpointName());
                     final HashSet<EJBModuleIdentifier> set = new HashSet<>(count);
-                    for (int i = 0; i < count; i ++) {
+                    for (int i = 0; i < count; i++) {
                         final String appName = message.readUTF();
                         final String moduleName = message.readUTF();
                         final String distinctName = message.readUTF();
@@ -229,10 +230,10 @@ class EJBClientChannel {
                 case Protocol.CLUSTER_TOPOLOGY_ADDITION:
                 case Protocol.CLUSTER_TOPOLOGY_COMPLETE: {
                     int clusterCount = StreamUtils.readPackedSignedInt32(message);
-                    for (int i = 0; i < clusterCount; i ++) {
+                    for (int i = 0; i < clusterCount; i++) {
                         final String clusterName = message.readUTF();
                         int memberCount = StreamUtils.readPackedSignedInt32(message);
-                        for (int j = 0; j < memberCount; j ++) {
+                        for (int j = 0; j < memberCount; j++) {
                             final String nodeName = message.readUTF();
                             discoveredNodeRegistry.addNode(clusterName, nodeName, channel.getConnection().getPeerURI());
                             final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(nodeName);
@@ -240,7 +241,7 @@ class EJBClientChannel {
 
                             // create and register the concrete ServiceURLs for each client mapping
                             int mappingCount = StreamUtils.readPackedSignedInt32(message);
-                            for (int k = 0; k < mappingCount; k ++) {
+                            for (int k = 0; k < mappingCount; k++) {
                                 int b = message.readUnsignedByte();
                                 final boolean ip6 = allAreClear(b, 1);
                                 int netmaskBits = b >>> 1;
@@ -260,7 +261,7 @@ class EJBClientChannel {
                 }
                 case Protocol.CLUSTER_TOPOLOGY_REMOVAL: {
                     int clusterCount = StreamUtils.readPackedSignedInt32(message);
-                    for (int i = 0; i < clusterCount; i ++) {
+                    for (int i = 0; i < clusterCount; i++) {
                         String clusterName = message.readUTF();
                         discoveredNodeRegistry.removeCluster(clusterName);
 
@@ -274,10 +275,10 @@ class EJBClientChannel {
                 }
                 case Protocol.CLUSTER_TOPOLOGY_NODE_REMOVAL: {
                     int clusterCount = StreamUtils.readPackedSignedInt32(message);
-                    for (int i = 0; i < clusterCount; i ++) {
+                    for (int i = 0; i < clusterCount; i++) {
                         String clusterName = message.readUTF();
                         int memberCount = StreamUtils.readPackedSignedInt32(message);
-                        for (int j = 0; j < memberCount; j ++) {
+                        for (int j = 0; j < memberCount; j++) {
                             String nodeName = message.readUTF();
                             discoveredNodeRegistry.removeNode(clusterName, nodeName);
                             final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(nodeName);
@@ -295,7 +296,7 @@ class EJBClientChannel {
             }
         } catch (IOException e) {
         } finally {
-            if (! leaveOpen) {
+            if (!leaveOpen) {
                 safeClose(message);
             }
         }
@@ -315,6 +316,7 @@ class EJBClientChannel {
             peerIdentityId = 0; // unused
         }
         try (MessageOutputStream underlying = invocationTracker.allocateMessage()) {
+            receiverContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("message output stream allocated");
             MessageOutputStream out = handleCompression(invocationContext, underlying);
             try {
                 out.write(Protocol.INVOCATION_REQUEST);
@@ -408,7 +410,7 @@ class EJBClientChannel {
                         marshalledPrivateAttachments.put(AttachmentKeys.TRANSACTION_ID_KEY, calculateTransactionId(transaction));
                     }
 
-                    final boolean hasPrivateAttachments = ! marshalledPrivateAttachments.isEmpty();
+                    final boolean hasPrivateAttachments = !marshalledPrivateAttachments.isEmpty();
                     if (hasPrivateAttachments) {
                         totalContextData++;
                     }
@@ -451,15 +453,19 @@ class EJBClientChannel {
 
                 // finished
                 marshaller.finish();
+                receiverContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("request marshalling done");
             } catch (IOException e) {
+                receiverContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("exception marshalling request " + e);
                 underlying.cancel();
                 throw e;
             } finally {
                 out.close();
             }
         } catch (IOException e) {
+            receiverContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("exception marshalling request " + e);
             receiverContext.requestFailed(new RequestSendFailedException(e.getMessage() + " @ " + peerIdentity.getConnection().getPeerURI(), e, true), getRetryExecutor());
         } catch (RollbackException | SystemException | RuntimeException e) {
+            receiverContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("exception marshalling request " + e);
             receiverContext.requestFailed(new EJBException(e.getMessage(), e), getRetryExecutor());
             return;
         }
@@ -469,14 +475,14 @@ class EJBClientChannel {
      * Wraps the {@link MessageOutputStream message output stream} into a relevant {@link DataOutputStream}, taking into account various factors like the necessity to
      * compress the data that gets passed along the stream
      *
-     * @param invocationContext         The EJB client invocation context
-     * @param messageOutputStream       The message output stream that needs to be wrapped
+     * @param invocationContext   The EJB client invocation context
+     * @param messageOutputStream The message output stream that needs to be wrapped
      * @return the compressed stream
      * @throws IOException if a problem occurs
      */
     private MessageOutputStream handleCompression(final EJBClientInvocationContext invocationContext, final MessageOutputStream messageOutputStream) throws IOException {
         // if the negotiated protocol version doesn't support compressed messages then just return
-        if(version == 1) {
+        if (version == 1) {
             return messageOutputStream;
         }
 
@@ -575,7 +581,7 @@ class EJBClientChannel {
     }
 
     boolean cancelInvocation(final EJBReceiverInvocationContext receiverContext, boolean cancelIfRunning) {
-        if (version < 3 && ! cancelIfRunning) {
+        if (version < 3 && !cancelIfRunning) {
             // keep legacy behavior
             return false;
         }
@@ -592,7 +598,8 @@ class EJBClientChannel {
                 if (version >= 3) {
                     out.writeBoolean(cancelIfRunning);
                 }
-            } catch (IOException ignored) {}
+            } catch (IOException ignored) {
+            }
         } finally {
             invocation.free();
         }
@@ -929,9 +936,9 @@ class EJBClientChannel {
         target[0] = 0x01;
         target[1] = (byte) length;
         System.arraycopy(nameBytes, 0, target, 2, length);
-        for (;;) {
+        for (; ; ) {
             int id = random.nextInt();
-            if (! userTxnIds.containsKey(id)) {
+            if (!userTxnIds.containsKey(id)) {
                 target[2 + length] = (byte) (id >> 24);
                 target[3 + length] = (byte) (id >> 16);
                 target[4 + length] = (byte) (id >> 8);
@@ -952,7 +959,7 @@ class EJBClientChannel {
                 return;
             }
             newVal = oldVal | bit;
-        } while (! finishedParts.compareAndSet(oldVal, newVal));
+        } while (!finishedParts.compareAndSet(oldVal, newVal));
         if (newVal == 0b11) {
             final FutureResult<EJBClientChannel> futureResult = futureResultRef.get();
             if (futureResult != null && futureResultRef.compareAndSet(futureResult, null)) {
@@ -980,7 +987,7 @@ class EJBClientChannel {
                 if (oldVal == 0) {
                     return false;
                 }
-            } while (! refCounter.compareAndSet(oldVal, oldVal + 1));
+            } while (!refCounter.compareAndSet(oldVal, oldVal + 1));
             return true;
         }
 
@@ -998,6 +1005,7 @@ class EJBClientChannel {
         }
 
         private void handleResponse(final int id, final DataInputStream inputStream) {
+            receiverInvocationContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("received response " + id);
             switch (id) {
                 case Protocol.INVOCATION_RESPONSE: {
                     free();
@@ -1034,10 +1042,12 @@ class EJBClientChannel {
                             context.setLocator(context.getLocator().withNewAffinity(new ClusterAffinity(new String(b, StandardCharsets.UTF_8))));
                         }
                     } catch (RuntimeException | IOException | RollbackException | SystemException e) {
+                        receiverInvocationContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("failed to unmarshal response" + e);
                         receiverInvocationContext.requestFailed(new EJBException(e), getRetryExecutor());
                         safeClose(inputStream);
                         break;
                     }
+                    receiverInvocationContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("result ready");
                     receiverInvocationContext.resultReady(new MethodCallResultProducer(inputStream, id));
                     break;
                 }
@@ -1047,11 +1057,13 @@ class EJBClientChannel {
                         final XAOutflowHandle outflowHandle = getOutflowHandle();
                         if (outflowHandle != null) outflowHandle.forgetEnlistment();
                     }
+                    receiverInvocationContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("request cancelled");
                     receiverInvocationContext.requestCancelled();
                     break;
                 }
                 case Protocol.APPLICATION_EXCEPTION: {
                     free();
+                    receiverInvocationContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("app exception");
                     receiverInvocationContext.resultReady(new ExceptionResultProducer(inputStream, id));
                     break;
                 }
@@ -1067,8 +1079,10 @@ class EJBClientChannel {
                         final EJBModuleIdentifier moduleIdentifier = receiverInvocationContext.getClientInvocationContext().getLocator().getIdentifier().getModuleIdentifier();
                         final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(getChannel().getConnection().getRemoteEndpointName());
                         nodeInformation.removeModule(EJBClientChannel.this, moduleIdentifier);
+                        receiverInvocationContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("no such EJB");
                         receiverInvocationContext.requestFailed(new NoSuchEJBException(message + " @ " + getChannel().getConnection().getPeerURI()), getRetryExecutor());
                     } catch (IOException e) {
+                        receiverInvocationContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("no such EJB" + e);
                         receiverInvocationContext.requestFailed(new EJBException("Failed to read 'No such EJB' response", e), getRetryExecutor());
                     } finally {
                         safeClose(inputStream);
@@ -1187,7 +1201,7 @@ class EJBClientChannel {
 
             public Object getResult() throws Exception {
                 final ResponseMessageInputStream response;
-                if(inputStream instanceof ResponseMessageInputStream) {
+                if (inputStream instanceof ResponseMessageInputStream) {
                     response = (ResponseMessageInputStream) inputStream;
                 } else {
                     response = new ResponseMessageInputStream(inputStream, id);
@@ -1198,7 +1212,7 @@ class EJBClientChannel {
                     result = unmarshaller.readObject();
                     int attachments = unmarshaller.readUnsignedByte();
                     final EJBClientInvocationContext clientInvocationContext = receiverInvocationContext.getClientInvocationContext();
-                    for (int i = 0; i < attachments; i ++) {
+                    for (int i = 0; i < attachments; i++) {
                         String key = unmarshaller.readObject(String.class);
                         if (version < 3 && key.equals(Affinity.WEAK_AFFINITY_CONTEXT_KEY)) {
                             final Affinity affinity = unmarshaller.readObject(Affinity.class);
@@ -1259,7 +1273,7 @@ class EJBClientChannel {
                         if (version < 3) {
                             // discard attachment data, if any
                             int attachments = unmarshaller.readUnsignedByte();
-                            for (int i = 0; i < attachments; i ++) {
+                            for (int i = 0; i < attachments; i++) {
                                 unmarshaller.readObject();
                                 unmarshaller.readObject();
                             }

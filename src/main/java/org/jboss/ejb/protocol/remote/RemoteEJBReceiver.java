@@ -40,6 +40,7 @@ import org.jboss.ejb.client.RequestSendFailedException;
 import org.jboss.ejb.client.SessionID;
 import org.jboss.ejb.client.StatefulEJBLocator;
 import org.jboss.ejb.client.StatelessEJBLocator;
+import org.jboss.ejb.client.*;
 import org.jboss.remoting3.ClientServiceHandle;
 import org.jboss.remoting3.Connection;
 import org.jboss.remoting3.ConnectionPeerIdentity;
@@ -73,31 +74,37 @@ class RemoteEJBReceiver extends EJBReceiver {
 
     final IoFuture.HandlingNotifier<ConnectionPeerIdentity, EJBReceiverInvocationContext> notifier = new IoFuture.HandlingNotifier<ConnectionPeerIdentity, EJBReceiverInvocationContext>() {
         public void handleDone(final ConnectionPeerIdentity peerIdentity, final EJBReceiverInvocationContext attachment) {
+            attachment.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("remote receiver getConnection notifier is done");
             serviceHandle.getClientService(peerIdentity.getConnection(), OptionMap.EMPTY).addNotifier((ioFuture, attachment1) -> {
                 final EJBClientChannel ejbClientChannel;
                 try {
 
                     ejbClientChannel = ioFuture.getInterruptibly();
                 } catch (IOException e) {
+                    attachment.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("remote receiver getConnection get failed" + e);
                     // should generally not be possible but we should handle it cleanly regardless
                     attachment1.requestFailed(new RequestSendFailedException(e + "@" + peerIdentity.getConnection().getPeerURI(), false), retryExecutorWrapper.getExecutor(peerIdentity.getConnection().getEndpoint().getXnioWorker()));
                     return;
                 } catch (InterruptedException e) {
+                    attachment.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("remote receiver getConnection get failed" + e);
                     Thread.currentThread().interrupt();
                     attachment1.requestFailed(new RequestSendFailedException(e + "@" + peerIdentity.getConnection().getPeerURI(), false), retryExecutorWrapper.getExecutor(peerIdentity.getConnection().getEndpoint().getXnioWorker()));
                     return;
                 }
                 attachment1.getClientInvocationContext().putAttachment(EJBCC_KEY, ejbClientChannel);
+                attachment.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("EJBClientChannel retrieved");
                 ejbClientChannel.processInvocation(attachment1, peerIdentity);
             }, attachment);
 
         }
 
         public void handleCancelled(final EJBReceiverInvocationContext attachment) {
+            attachment.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("remote receiver getConnection notifier CANCELLED");
             attachment.requestCancelled();
         }
 
         public void handleFailed(final IOException exception, final EJBReceiverInvocationContext attachment) {
+            attachment.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("remote receiver getConnection notifier FAILED " + exception);
             attachment.requestFailed(new RequestSendFailedException(exception, false), retryExecutorWrapper.getExecutor(Endpoint.getCurrent().getXnioWorker()));
         }
     };
@@ -125,7 +132,9 @@ class RemoteEJBReceiver extends EJBReceiver {
 
     protected void processInvocation(final EJBReceiverInvocationContext receiverContext) throws Exception {
         final AuthenticationContext authenticationContext = receiverContext.getAuthenticationContext();
+        receiverContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("remote receiver processInvocation");
         final IoFuture<ConnectionPeerIdentity> futureConnection = getConnection(receiverContext.getClientInvocationContext(), receiverContext.getClientInvocationContext().getDestination(), authenticationContext);
+        receiverContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("remote receiver getConnection returned " + futureConnection);
         // this actually causes the invocation to move forward
         futureConnection.addNotifier(notifier, receiverContext);
     }

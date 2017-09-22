@@ -825,6 +825,7 @@ public final class EJBClientContext extends Attachable implements Contextual<EJB
     <T> StatefulEJBLocator<T> createSession(final EJBSessionCreationInvocationContext context, final StatelessEJBLocator<T> statelessLocator, final NamingProvider namingProvider) throws Exception {
         // Special hook for naming; let's replace this sometime soon.
         if (namingProvider != null) context.putAttachment(EJBRootContext.NAMING_PROVIDER_ATTACHMENT_KEY, namingProvider);
+        context.putAttachment(InvocationTrace.ATTACHMENT_KEY, new InvocationTrace(statelessLocator, null));
 
         Logs.INVOCATION.tracef("Calling createSession(locator = %s)",statelessLocator);
 

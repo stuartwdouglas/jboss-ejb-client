@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.Callable;
 import java.util.function.Supplier;
 
 import javax.ejb.NoSuchEJBException;
@@ -86,6 +87,8 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
 
     public void handleInvocation(final EJBClientInvocationContext context) throws Exception {
         if (context.getDestination() != null) {
+
+            context.getAttachment(InvocationTrace.ATTACHMENT_KEY).log("not performing discovery as destination is already set");
             // already discovered!
             context.sendRequest();
             return;
@@ -239,8 +242,13 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
         return blacklist != null && blacklist.contains(destination);
     }
 
-    ServicesQueue discover(final FilterSpec filterSpec) {
-        return getDiscovery().discover(EJB_SERVICE_TYPE, filterSpec);
+    ServicesQueue discover(final FilterSpec filterSpec, AbstractInvocationContext invocationContext) {
+        return invocationContext.getAttachment(InvocationTrace.ATTACHMENT_KEY).run(new Callable<ServicesQueue>() {
+            @Override
+            public ServicesQueue call() throws Exception {
+                return getDiscovery().discover(EJB_SERVICE_TYPE, filterSpec);
+            }
+        });
     }
 
     Discovery getDiscovery() {
@@ -277,6 +285,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
             filterSpec = FilterSpec.equal(FILTER_ATTR_NODE, ((NodeAffinity) affinity).getNodeName());
             return doFirstMatchDiscovery(context, filterSpec, null);
         } else if (affinity instanceof ClusterAffinity) {
+            context.getAttachment(InvocationTrace.ATTACHMENT_KEY).log("Executing cluster discovery " + affinity);
             if (weakAffinity instanceof NodeAffinity) {
                 filterSpec = FilterSpec.all(
                     FilterSpec.equal(FILTER_ATTR_CLUSTER, ((ClusterAffinity) affinity).getClusterName()),
@@ -311,7 +320,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
         Logs.INVOCATION.tracef("Performing first-match discovery(locator = %s, weak affinity = %s, filter spec = %s)", context.getLocator(), context.getWeakAffinity(), filterSpec);
         final List<Throwable> problems;
         final Set<URI> set = context.getAttachment(BL_KEY);
-        try (final ServicesQueue queue = discover(filterSpec)) {
+        try (final ServicesQueue queue = discover(filterSpec, context)) {
             ServiceURL serviceURL;
             while ((serviceURL = queue.takeService()) != null) {
                 final URI location = serviceURL.getLocationURI();
@@ -369,7 +378,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
         final Map<URI, List<String>> clusterAssociations = new HashMap<>();
 
         int nodeless = 0;
-        try (final ServicesQueue queue = discover(filterSpec)) {
+        try (final ServicesQueue queue = discover(filterSpec, context)) {
             ServiceURL serviceURL;
             while ((serviceURL = queue.takeService()) != null) {
                 final URI location = serviceURL.getLocationURI();
@@ -484,7 +493,7 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
         final EJBClientContext clientContext = context.getClientContext();
         final List<Throwable> problems;
         final Set<URI> set = context.getAttachment(BL_KEY);
-        try (final ServicesQueue queue = discover(filterSpec)) {
+        try (final ServicesQueue queue = discover(filterSpec, context)) {
             ServiceURL serviceURL;
             while ((serviceURL = queue.takeService()) != null) {
                 final URI location = serviceURL.getLocationURI();
