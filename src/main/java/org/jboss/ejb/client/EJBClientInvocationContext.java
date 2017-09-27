@@ -49,7 +49,7 @@ import org.wildfly.security.auth.client.AuthenticationContext;
  */
 public final class EJBClientInvocationContext extends AbstractInvocationContext {
 
-    private final int TEST_TIMEOUT = Integer.getInteger("org.jboss.ejb-client.audit-timeout", 2000);
+    private final int TEST_TIMEOUT = Integer.getInteger("org.jboss.ejb-client.audit-timeout", 10000);
 
     private static final Logs log = Logs.MAIN;
 
