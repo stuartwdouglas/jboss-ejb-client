@@ -33,9 +33,7 @@ import java.net.Inet6Address;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.PrivilegedAction;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
@@ -51,21 +49,7 @@ import javax.transaction.xa.XAException;
 import javax.transaction.xa.Xid;
 
 import org.jboss.ejb._private.Logs;
-import org.jboss.ejb.client.Affinity;
-import org.jboss.ejb.client.AttachmentKeys;
-import org.jboss.ejb.client.ClusterAffinity;
-import org.jboss.ejb.client.EJBClient;
-import org.jboss.ejb.client.EJBClientInvocationContext;
-import org.jboss.ejb.client.EJBIdentifier;
-import org.jboss.ejb.client.EJBLocator;
-import org.jboss.ejb.client.EJBMethodLocator;
-import org.jboss.ejb.client.EJBModuleIdentifier;
-import org.jboss.ejb.client.NodeAffinity;
-import org.jboss.ejb.client.RequestSendFailedException;
-import org.jboss.ejb.client.SessionID;
-import org.jboss.ejb.client.TransactionID;
-import org.jboss.ejb.client.UserTransactionID;
-import org.jboss.ejb.client.XidTransactionID;
+import org.jboss.ejb.client.*;
 import org.jboss.ejb.client.annotation.CompressionHint;
 import org.jboss.ejb.server.Association;
 import org.jboss.ejb.server.CancelHandle;
@@ -104,6 +88,8 @@ import org.wildfly.transaction.client.spi.SubordinateTransactionControl;
  */
 @SuppressWarnings("deprecation")
 final class EJBServerChannel {
+
+    private static final Timer timer = new Timer();
 
     private static final char METHOD_PARAM_TYPE_SEPARATOR = ',';
 
@@ -400,46 +386,63 @@ final class EJBServerChannel {
         }
 
         void handleInvocationRequest(final int invId, final InputStream input) throws IOException, ClassNotFoundException {
-            final MarshallingConfiguration configuration = EJBServerChannel.this.configuration.clone();
-            final ServerClassResolver classResolver = new ServerClassResolver();
-            configuration.setClassResolver(classResolver);
-            final Unmarshaller unmarshaller;
+            try {
+                final MarshallingConfiguration configuration = EJBServerChannel.this.configuration.clone();
+                final ServerClassResolver classResolver = new ServerClassResolver();
+                configuration.setClassResolver(classResolver);
+                final Unmarshaller unmarshaller;
 
-            final EJBIdentifier identifier;
-            final EJBMethodLocator methodLocator;
+                final EJBIdentifier identifier;
+                final EJBMethodLocator methodLocator;
 
-            final Connection connection = channel.getConnection();
-            final SecurityIdentity identity;
-            if (version >= 3) {
-                unmarshaller = marshallerFactory.createUnmarshaller(configuration);
-                unmarshaller.start(Marshalling.createByteInput(input));
-                identifier = unmarshaller.readObject(EJBIdentifier.class);
-                methodLocator = unmarshaller.readObject(EJBMethodLocator.class);
-                int identityId = unmarshaller.readInt();
-                identity = identityId == 0 ? connection.getLocalIdentity() : connection.getLocalIdentity(identityId);
-            } else {
-                assert version <= 2;
-                DataInputStream data = new DataInputStream(input);
-                final String methodName = data.readUTF();
-                // method signature
-                final String sigString = data.readUTF();
-                unmarshaller = marshallerFactory.createUnmarshaller(configuration);
-                unmarshaller.start(Marshalling.createByteInput(data));
-                String appName = unmarshaller.readObject(String.class);
-                String moduleName = unmarshaller.readObject(String.class);
-                String distinctName = unmarshaller.readObject(String.class);
-                String beanName = unmarshaller.readObject(String.class);
-                identifier = new EJBIdentifier(appName, moduleName, beanName, distinctName);
-
-                // parse out the signature string
-                final String[] parameterTypeNames;
-                if (sigString.isEmpty()) {
-                    parameterTypeNames = new String[0];
+                final Connection connection = channel.getConnection();
+                final SecurityIdentity identity;
+                if (version >= 3) {
+                    unmarshaller = marshallerFactory.createUnmarshaller(configuration);
+                    unmarshaller.start(Marshalling.createByteInput(input));
+                    identifier = unmarshaller.readObject(EJBIdentifier.class);
+                    methodLocator = unmarshaller.readObject(EJBMethodLocator.class);
+                    int identityId = unmarshaller.readInt();
+                    identity = identityId == 0 ? connection.getLocalIdentity() : connection.getLocalIdentity(identityId);
                 } else {
-                    parameterTypeNames = sigString.split(String.valueOf(METHOD_PARAM_TYPE_SEPARATOR));
+                    assert version <= 2;
+                    DataInputStream data = new DataInputStream(input);
+                    final String methodName = data.readUTF();
+                    // method signature
+                    final String sigString = data.readUTF();
+                    unmarshaller = marshallerFactory.createUnmarshaller(configuration);
+                    unmarshaller.start(Marshalling.createByteInput(data));
+                    String appName = unmarshaller.readObject(String.class);
+                    String moduleName = unmarshaller.readObject(String.class);
+                    String distinctName = unmarshaller.readObject(String.class);
+                    String beanName = unmarshaller.readObject(String.class);
+                    identifier = new EJBIdentifier(appName, moduleName, beanName, distinctName);
+
+                    // parse out the signature string
+                    final String[] parameterTypeNames;
+                    if (sigString.isEmpty()) {
+                        parameterTypeNames = new String[0];
+                    } else {
+                        parameterTypeNames = sigString.split(String.valueOf(METHOD_PARAM_TYPE_SEPARATOR));
+                    }
+                    methodLocator = new EJBMethodLocator(methodName, parameterTypeNames);
+                    identity = connection.getLocalIdentity();
                 }
-                methodLocator = new EJBMethodLocator(methodName, parameterTypeNames);
-                identity = connection.getLocalIdentity();
+
+                InvocationTrace trace = new InvocationTrace(null, methodLocator);
+                TimerTask task = new TimerTask() {
+                    @Override
+                    public void run() {
+                        trace.print();
+                    }
+                };
+                timer.schedule(task, 10000, 10000);
+                final RemotingInvocationRequest request = new RemotingInvocationRequest(
+                        invId, identifier, methodLocator, classResolver, unmarshaller, identity,
+                        trace, task);
+                invocations.put(new InProgress(request, association.receiveInvocationRequest(request)));
+            } catch (Exception e) {
+                Logs.INVOCATION.error("Unxpected error", e);
             }
             final RemotingInvocationRequest request = new RemotingInvocationRequest(
                 invId, identifier, methodLocator, classResolver, unmarshaller, identity
@@ -756,16 +759,21 @@ final class EJBServerChannel {
         final ServerClassResolver classResolver;
         final Unmarshaller remaining;
         int txnCmd = 0; // assume nobody will ask about the transaction
+        private final InvocationTrace trace;
+        private final TimerTask task;
 
-        RemotingInvocationRequest(final int invId, final EJBIdentifier identifier, final EJBMethodLocator methodLocator, final ServerClassResolver classResolver, final Unmarshaller remaining, final SecurityIdentity identity) {
+        RemotingInvocationRequest(final int invId, final EJBIdentifier identifier, final EJBMethodLocator methodLocator, final ServerClassResolver classResolver, final Unmarshaller remaining, final SecurityIdentity identity, InvocationTrace trace, TimerTask task) {
             super(invId, identity);
             this.identifier = identifier;
             this.methodLocator = methodLocator;
             this.classResolver = classResolver;
             this.remaining = remaining;
+            this.trace = trace;
+            this.task = task;
         }
 
         public Resolved getRequestContent(final ClassLoader classLoader) throws IOException, ClassNotFoundException {
+            trace.log("getRequestContent");
             classResolver.setClassLoader(classLoader);
             int responseCompressLevel = 0;
             // resolve the rest of everything here
@@ -783,6 +791,7 @@ final class EJBServerChannel {
                     // do identity checks for these strings to guarantee integrity.
                     // noinspection StringEquality
                     if (identifier != locator.getIdentifier()) {
+                        trace.log("mismatched");
                         throw Logs.REMOTING.mismatchedMethodLocation();
                     }
 
@@ -804,6 +813,7 @@ final class EJBServerChannel {
                 for (int i = 0; i < parameters.length; i ++) {
                     parameters[i] = unmarshaller.readObject();
                 }
+                trace.log("parameters unmarshalled");
                 int attachmentCount = PackedInteger.readPackedInteger(unmarshaller);
                 final Map<String, Object> attachments = new HashMap<>(attachmentCount);
                 for (int i = 0; i < attachmentCount; i ++) {
@@ -902,6 +912,7 @@ final class EJBServerChannel {
                     }
 
                     public void writeInvocationResult(final Object result) {
+                        trace.log("writeInvocationResult");
                         MessageOutputStream os;
                         try (MessageOutputStream underlying = messageTracker.openMessageUninterruptibly()) {
                             if(finalResponseCompressLevel != 0) {
@@ -966,9 +977,11 @@ final class EJBServerChannel {
                             }
                             marshaller.finish();
                             os.close();
-                        } catch (IOException e) {
+                            task.cancel();
+                        } catch (Throwable e) {
+                            task.cancel();
                             // nothing to do at this point; the client doesn't want the response
-                            Logs.REMOTING.trace("EJB response write failed", e);
+                            Logs.REMOTING.error("EJB response write failed", e);
                         } finally {
                             invocations.removeKey(invId);
                         }
@@ -984,12 +997,13 @@ final class EJBServerChannel {
                 //not used in newer protocols
                 return;
             }
+            trace.log("writeProceedAsync");
             try (MessageOutputStream os = messageTracker.openMessageUninterruptibly()) {
                 os.writeByte(Protocol.PROCEED_ASYNC_RESPONSE);
                 os.writeShort(invId);
-            } catch (IOException e) {
+            } catch (Exception e) {
                 // nothing to do at this point; the client doesn't want the response
-                Logs.REMOTING.trace("EJB async response write failed", e);
+                Logs.REMOTING.error("EJB async response write failed", e);
             }
         }
 
@@ -999,6 +1013,7 @@ final class EJBServerChannel {
         }
 
         public void writeNoSuchMethod() {
+            trace.log("writeNoSuchMethod");
             final String message = Logs.REMOTING.remoteMessageNoSuchMethod(methodLocator, identifier);
             try (MessageOutputStream os = messageTracker.openMessageUninterruptibly()) {
                 os.writeByte(Protocol.NO_SUCH_METHOD);
@@ -1013,14 +1028,16 @@ final class EJBServerChannel {
         }
 
         public void writeSessionNotActive() {
+            trace.log("writeSessionNotActive");
             final String message = Logs.REMOTING.remoteMessageSessionNotActive(methodLocator, identifier);
             try (MessageOutputStream os = messageTracker.openMessageUninterruptibly()) {
                 os.writeByte(Protocol.NO_SUCH_METHOD);
                 os.writeShort(invId);
                 os.writeUTF(message);
-            } catch (IOException e) {
+                task.cancel();
+            } catch (Throwable e) {
                 // nothing to do at this point; the client doesn't want the response
-                Logs.REMOTING.trace("EJB response write failed", e);
+                Logs.REMOTING.error("EJB response write failed", e);
             } finally {
                 invocations.removeKey(invId);
             }
