@@ -26,6 +26,7 @@ import javax.transaction.xa.Xid;
 
 import org.jboss.ejb._private.Logs;
 import org.jboss.ejb.client.EJBClientContext;
+import org.jboss.ejb.client.InvocationTrace;
 import org.jboss.ejb.client.TransactionID;
 import org.jboss.ejb.client.XidTransactionID;
 import org.jboss.marshalling.Marshalling;
@@ -50,6 +51,7 @@ class EJBTransactionOperations implements RemotingOperations {
         final EJBClientContext ejbClientContext = EJBClientContext.getCurrent();
         final RemoteEJBReceiver receiver = ejbClientContext.getAttachment(RemoteTransportProvider.ATTACHMENT_KEY);
         if (receiver != null) {
+            connection.getAttachments().attach(RemoteEJBReceiver.TRACE, new InvocationTrace(null, null)); //kinda bogus, but all we can do
             this.channel = receiver.getClientChannel(connection);
         } else {
             throw Logs.REMOTING.noRemoteTransportOnEJBContext();

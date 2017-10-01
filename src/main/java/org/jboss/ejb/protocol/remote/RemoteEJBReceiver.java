@@ -41,6 +41,7 @@ import org.jboss.ejb.client.SessionID;
 import org.jboss.ejb.client.StatefulEJBLocator;
 import org.jboss.ejb.client.StatelessEJBLocator;
 import org.jboss.ejb.client.*;
+import org.jboss.remoting3.Attachments;
 import org.jboss.remoting3.ClientServiceHandle;
 import org.jboss.remoting3.Connection;
 import org.jboss.remoting3.ConnectionPeerIdentity;
@@ -56,6 +57,8 @@ import org.xnio.OptionMap;
  */
 class RemoteEJBReceiver extends EJBReceiver {
     static final AttachmentKey<EJBClientChannel> EJBCC_KEY = new AttachmentKey<>();
+
+    static final Attachments.Key<InvocationTrace> TRACE = new Attachments.Key<>(InvocationTrace.class);
 
     private final RemoteTransportProvider remoteTransportProvider;
     private final EJBReceiverContext receiverContext;
@@ -74,7 +77,9 @@ class RemoteEJBReceiver extends EJBReceiver {
 
     final IoFuture.HandlingNotifier<ConnectionPeerIdentity, EJBReceiverInvocationContext> notifier = new IoFuture.HandlingNotifier<ConnectionPeerIdentity, EJBReceiverInvocationContext>() {
         public void handleDone(final ConnectionPeerIdentity peerIdentity, final EJBReceiverInvocationContext attachment) {
-            attachment.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("remote receiver getConnection notifier is done");
+            InvocationTrace invocationTrace = attachment.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY);
+            invocationTrace.log("remote receiver getConnection notifier is done");
+            peerIdentity.getConnection().getAttachments().attach(TRACE, invocationTrace);
             serviceHandle.getClientService(peerIdentity.getConnection(), OptionMap.EMPTY).addNotifier((ioFuture, attachment1) -> {
                 final EJBClientChannel ejbClientChannel;
                 try {

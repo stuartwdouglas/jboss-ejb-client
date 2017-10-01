@@ -640,18 +640,23 @@ class EJBClientChannel {
     }
 
     static IoFuture<EJBClientChannel> construct(final Channel channel, final DiscoveredNodeRegistry discoveredNodeRegistry, RetryExecutorWrapper retryExecutorWrapper) {
+        InvocationTrace trace = channel.getConnection().getAttachments().getAttachment(RemoteEJBReceiver.TRACE);
+        trace.log("called EJBClientChannel.construct");
         FutureResult<EJBClientChannel> futureResult = new FutureResult<>();
         // now perform opening negotiation: receive server greeting
         channel.receiveMessage(new Channel.Receiver() {
             public void handleError(final Channel channel, final IOException error) {
+                trace.log("EJBClientChannel received error " + error);
                 futureResult.setException(error);
             }
 
             public void handleEnd(final Channel channel) {
+                trace.log("EJBClientChannel received end ");
                 futureResult.setCancelled();
             }
 
             public void handleMessage(final Channel channel, final MessageInputStream message) {
+                trace.log("EJBClientChannel received first message ");
                 // receive message body
                 try {
                     final int version = min(3, StreamUtils.readInt8(message));
@@ -668,16 +673,19 @@ class EJBClientChannel {
                     final EJBClientChannel ejbClientChannel = new EJBClientChannel(channel, version, discoveredNodeRegistry, futureResult, retryExecutorWrapper);
                     channel.receiveMessage(new Channel.Receiver() {
                         public void handleError(final Channel channel, final IOException error) {
+                            trace.log("EJBClientChannel received second error " + error);
                             futureResult.setException(error);
                             safeClose(channel);
                         }
 
                         public void handleEnd(final Channel channel) {
+                            trace.log("EJBClientChannel received second end ");
                             futureResult.setException(new EOFException());
                             safeClose(channel);
                         }
 
                         public void handleMessage(final Channel channel, final MessageInputStream message) {
+                            trace.log("EJBClientChannel received second message ");
                             try {
                                 ejbClientChannel.processMessage(message);
                             } finally {
@@ -686,13 +694,18 @@ class EJBClientChannel {
                         }
                     });
                 } catch (final IOException e) {
+                    trace.log("EJBClientChannel threw IOException" + e);
                     channel.closeAsync();
-                    channel.addCloseHandler((closed, exception) -> futureResult.setException(e));
+                    channel.addCloseHandler((closed, exception) -> {
+                        trace.log("close handler called in EjbClientChannel after exception");
+                        futureResult.setException(e);
+                    });
                 }
             }
         });
         futureResult.addCancelHandler(new Cancellable() {
             public Cancellable cancel() {
+                trace.log("called EJBClientChannel construction cancel handler");
                 if (futureResult.setCancelled()) {
                     safeClose(channel);
                 }
