@@ -170,6 +170,7 @@ final class EJBServerChannel {
 
                             }
                             final int invId = (input.read() << 8) | input.read();
+                            Logs.INVOCATION.error("Read invocation:" + invId);
                             try {
                                 handleInvocationRequest(invId, input);
                             } catch (IOException | ClassNotFoundException e) {
@@ -923,6 +924,7 @@ final class EJBServerChannel {
                             }
                             os.writeByte(Protocol.INVOCATION_RESPONSE);
                             os.writeShort(invId);
+                            Logs.INVOCATION.error("Wrote invocation:" + invId);
                             if (version >= 3) {
                                 os.writeByte(txnCmd);
                                 int updateBits = 0;

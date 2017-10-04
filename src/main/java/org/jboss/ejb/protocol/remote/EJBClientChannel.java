@@ -316,7 +316,7 @@ class EJBClientChannel {
             peerIdentityId = 0; // unused
         }
         try (MessageOutputStream underlying = invocationTracker.allocateMessage()) {
-            receiverContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("message output stream allocated");
+            receiverContext.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY).log("message output stream allocated, invocation id " + invocation.getIndex());
             MessageOutputStream out = handleCompression(invocationContext, underlying);
             try {
                 out.write(Protocol.INVOCATION_REQUEST);
