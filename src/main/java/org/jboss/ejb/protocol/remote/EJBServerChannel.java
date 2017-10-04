@@ -101,6 +101,38 @@ final class EJBServerChannel {
     private final MarshallingConfiguration configuration;
     private final IntIndexHashMap<InProgress> invocations = new IntIndexHashMap<>(InProgress::getInvId);
 
+    private static final List<Integer> rec = new ArrayList<>();
+    private static final List<Integer> write = new ArrayList<>();
+    static {
+        timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                synchronized (rec) {
+                    if(!rec.isEmpty()) {
+                        StringBuilder sb = new StringBuilder("Received invocations ");
+                        for(int i : rec) {
+                            sb.append(i);
+                            sb.append(", ");
+                        }
+                        Logs.INVOCATION.error(sb.toString());
+                        rec.clear();
+                    }
+                }
+                synchronized (write) {
+                    if(!write.isEmpty()) {
+                        StringBuilder sb = new StringBuilder("Wrote invocations ");
+                        for(int i : write) {
+                            sb.append(i);
+                            sb.append(", ");
+                        }
+                        Logs.INVOCATION.error(sb.toString());
+                        write.clear();
+                    }
+                }
+            }
+        }, 10000, 10000);
+    }
+
     EJBServerChannel(final RemotingTransactionServer transactionServer, final Channel channel, final int version, final MessageTracker messageTracker) {
         this.transactionServer = transactionServer;
         this.channel = channel;
@@ -170,7 +202,9 @@ final class EJBServerChannel {
 
                             }
                             final int invId = (input.read() << 8) | input.read();
-                            Logs.INVOCATION.error("Read invocation:" + invId);
+                            synchronized (rec) {
+                                rec.add(invId);
+                            }
                             try {
                                 handleInvocationRequest(invId, input);
                             } catch (IOException | ClassNotFoundException e) {
@@ -924,7 +958,9 @@ final class EJBServerChannel {
                             }
                             os.writeByte(Protocol.INVOCATION_RESPONSE);
                             os.writeShort(invId);
-                            Logs.INVOCATION.error("Wrote invocation:" + invId);
+                            synchronized (write) {
+                                write.add(invId);
+                            }
                             if (version >= 3) {
                                 os.writeByte(txnCmd);
                                 int updateBits = 0;
