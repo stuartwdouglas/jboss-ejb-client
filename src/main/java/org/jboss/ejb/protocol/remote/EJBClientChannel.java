@@ -185,6 +185,9 @@ class EJBClientChannel {
                 case Protocol.PROCEED_ASYNC_RESPONSE: {
                     final int invId = message.readUnsignedShort();
                     leaveOpen = invocationTracker.signalResponse(invId, msg, message, false);
+                    if(!leaveOpen) {
+                        Logs.INVOCATION.error("Messages " + invId + " was not found in invocation map " + msg);
+                    }
                     break;
                 }
                 case Protocol.COMPRESSED_INVOCATION_MESSAGE: {
@@ -192,6 +195,10 @@ class EJBClientChannel {
                     final int realMessageId = inputStream.readByte();
                     final int invId = inputStream.readUnsignedShort();
                     leaveOpen = invocationTracker.signalResponse(invId, realMessageId, new ResponseMessageInputStream(inputStream, invId), false);
+
+                    if(!leaveOpen) {
+                        Logs.INVOCATION.error("Messages " + invId + " was not found in invocation map " + msg);
+                    }
                     break;
                 }
                 case Protocol.MODULE_AVAILABLE: {
