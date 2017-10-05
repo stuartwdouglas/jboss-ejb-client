@@ -472,16 +472,9 @@ final class EJBServerChannel {
                     }
                 };
                 timer.schedule(task, 10000, 10000);
-                final RemotingInvocationRequest request = new RemotingInvocationRequest(
-                        invId, identifier, methodLocator, classResolver, unmarshaller, identity,
-                        trace, task);
-                invocations.put(new InProgress(request, association.receiveInvocationRequest(request)));
-            } catch (Exception e) {
-                Logs.INVOCATION.error("Unxpected error", e);
-            }
             final RemotingInvocationRequest request = new RemotingInvocationRequest(
                 invId, identifier, methodLocator, classResolver, unmarshaller, identity
-            );
+            , trace, task);
             InProgress value = new InProgress(request);
             invocations.put(value);
             try {
@@ -495,6 +488,9 @@ final class EJBServerChannel {
                 } else {
                     request.writeException(new EJBException(new RuntimeException(t)));
                 }
+            }
+            } catch (Exception e) {
+                Logs.INVOCATION.error("Unxpected error", e);
             }
         }
     }

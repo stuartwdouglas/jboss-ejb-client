@@ -78,6 +78,7 @@ class RemoteEJBReceiver extends EJBReceiver {
     final IoFuture.HandlingNotifier<ConnectionPeerIdentity, EJBReceiverInvocationContext> notifier = new IoFuture.HandlingNotifier<ConnectionPeerIdentity, EJBReceiverInvocationContext>() {
         public void handleDone(final ConnectionPeerIdentity peerIdentity, final EJBReceiverInvocationContext attachment) {
             InvocationTrace invocationTrace = attachment.getClientInvocationContext().getAttachment(InvocationTrace.ATTACHMENT_KEY);
+
             invocationTrace.log("remote receiver getConnection notifier is done");
             peerIdentity.getConnection().getAttachments().attach(TRACE, invocationTrace);
             serviceHandle.getClientService(peerIdentity.getConnection(), OptionMap.EMPTY).addNotifier((ioFuture, attachment1) -> {

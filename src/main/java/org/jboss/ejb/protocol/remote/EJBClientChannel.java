@@ -186,7 +186,17 @@ class EJBClientChannel {
                     final int invId = message.readUnsignedShort();
                     leaveOpen = invocationTracker.signalResponse(invId, msg, message, false);
                     if(!leaveOpen) {
-                        Logs.INVOCATION.error("Messages " + invId + " was not found in invocation map " + msg);
+                        for(int i = 0; i < 10 && !leaveOpen; ++i ) {
+                            Logs.INVOCATION.error("Messages " + invId + " was not found in invocation map " + msg + " retrying");
+                            try {
+                                Thread.sleep(100);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            leaveOpen = invocationTracker.signalResponse(invId, msg, message, false);
+
+                            Logs.INVOCATION.error("Retry Result: " + leaveOpen);
+                        }
                     }
                     break;
                 }
@@ -647,7 +657,11 @@ class EJBClientChannel {
     }
 
     static IoFuture<EJBClientChannel> construct(final Channel channel, final DiscoveredNodeRegistry discoveredNodeRegistry, RetryExecutorWrapper retryExecutorWrapper) {
-        InvocationTrace trace = channel.getConnection().getAttachments().getAttachment(RemoteEJBReceiver.TRACE);
+        InvocationTrace it = channel.getConnection().getAttachments().getAttachment(RemoteEJBReceiver.TRACE);
+        if(it == null) {
+            channel.getConnection().getAttachments().attach(RemoteEJBReceiver.TRACE, it = new InvocationTrace(null, null));
+        }
+        InvocationTrace trace = it;
         trace.log("called EJBClientChannel.construct");
         FutureResult<EJBClientChannel> futureResult = new FutureResult<>();
         // now perform opening negotiation: receive server greeting
